@@ -9,6 +9,7 @@
   :root { color-scheme: dark; }
   body { margin: 0; background: #0f0f0f; color: #f1f1f1; font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; }
   .wrap { max-width: 900px; margin: 0 auto; padding: env(safe-area-inset-top) 0 24px; }
+  .player[hidden] { display: none; }
   .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
   .player iframe, #yt { position: absolute; inset: 0; width: 100%; height: 100%; }
   .sub {
@@ -21,6 +22,10 @@
   form { display: flex; gap: 8px; margin: 16px; }
   input[type="url"] { flex: 1; min-width: 0; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #181818; color: inherit; font-size: 16px; }
   button { padding: 12px 16px; border: 0; border-radius: 8px; background: #d97757; color: #fff; font-size: 16px; font-weight: 600; }
+  .list { margin: 20px 16px 0; }
+  .list h2 { font-size: 15px; color: #aaa; font-weight: 600; margin: 0 0 8px; }
+  .list a { display: block; padding: 12px 0; border-top: 1px solid #222; color: inherit; text-decoration: none; }
+  .list a small { display: block; color: #888; font-size: 13px; margin-top: 2px; }
   label { display: flex; align-items: center; gap: 6px; margin: 10px 16px 0; color: #aaa; font-size: 14px; }
 </style>
 </head>
@@ -30,11 +35,12 @@
     <input id="link" type="url" placeholder="유튜브 링크 붙여넣기" autocomplete="off">
     <button>보기</button>
   </form>
-  <div class="player"><div id="yt"></div></div>
+  <div class="player" id="playerBox" hidden><div id="yt"></div></div>
   <div class="sub" id="sub"></div>
   <div class="src" id="src"></div>
   <label><input type="checkbox" id="showSrc"> 영어 원문도 보기</label>
   <div class="status" id="status">링크를 넣으면 한국어 자막을 준비해요.</div>
+  <div class="list" id="list" hidden><h2>번역해 둔 영상</h2><div id="items"></div></div>
 </div>
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
@@ -55,10 +61,11 @@
 
   function load(id) {
     videoId = id;
+    $('playerBox').hidden = false;
     segs = [];
     $('sub').textContent = '';
     $('src').textContent = '';
-    history.replaceState(null, '', '?v=' + id); // 비밀키가 담긴 #은 주소창에서 지움
+    history.replaceState(null, '', '?v=' + id + location.hash); // # 유지: 홈 화면 아이콘에도 비밀키가 남게
     const go = () => {
       if (player) player.loadVideoById(id);
       else player = new YT.Player('yt', { videoId: id, playerVars: { playsinline: 1, cc_load_policy: 0 } });
@@ -146,6 +153,27 @@
     if (id) load(id);
     else setStatus('유튜브 링크가 아닌 것 같아요', true);
   });
+
+  // 번역해 둔 영상 목록 (비밀키로 암호화된 list.enc를 풀어서 표시)
+  async function loadList() {
+    if (!onPages || !KEY) return;
+    try {
+      const raw = Uint8Array.from(atob(await (await fetch('list.enc', { cache: 'no-cache' })).text()), (c) => c.charCodeAt(0));
+      const k = await crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256', new TextEncoder().encode(KEY + ':list')), 'AES-GCM', false, ['decrypt']);
+      const items = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, k, raw.slice(12))));
+      $('items').replaceChildren(...items.map((it) => {
+        const a = document.createElement('a');
+        a.href = '?v=' + it.id + location.hash;
+        a.textContent = it.title;
+        const sm = document.createElement('small');
+        sm.textContent = `${it.channel} · ${it.added}`;
+        a.append(sm);
+        return a;
+      }));
+      $('list').hidden = !items.length;
+    } catch {}
+  }
+  loadList();
 
   const q = new URLSearchParams(location.search);
   const first = parseId(q.get('v') || q.get('u') || '');
