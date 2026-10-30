@@ -26,6 +26,14 @@
   .list h2 { font-size: 15px; color: #aaa; font-weight: 600; margin: 0 0 8px; }
   .list a { display: block; padding: 12px 0; border-top: 1px solid #222; color: inherit; text-decoration: none; }
   .list a small { display: block; color: #888; font-size: 13px; margin-top: 2px; }
+  .note { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; background: #2a2116; color: #f0c48a; font-size: 14px; line-height: 1.5; }
+  .ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 16px 0; }
+  .ctrl button { padding: 8px 12px; font-size: 15px; background: #333; }
+  .ctrl a { color: #d97757; font-size: 14px; }
+  #tTime { font-variant-numeric: tabular-nums; color: #ccc; min-width: 3.5em; }
+  .line { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid #222; font-size: 15px; line-height: 1.45; }
+  .line b { color: #888; font-weight: 400; font-variant-numeric: tabular-nums; min-width: 3em; }
+  .line.on { color: #d97757; }
   label { display: flex; align-items: center; gap: 6px; margin: 10px 16px 0; color: #aaa; font-size: 14px; }
 </style>
 </head>
@@ -36,16 +44,41 @@
     <button>보기</button>
   </form>
   <div class="player" id="playerBox" hidden><div id="yt"></div></div>
+  <div id="textMode" hidden>
+    <div class="note">연령 제한 영상이라 여기서는 재생할 수 없어요. 유튜브 앱에서 재생하면서 ▶를 눌러 자막 시간을 맞추세요. 대본 줄을 누르면 그 시점으로 맞춰져요.</div>
+    <div class="ctrl"><button id="tPlay">▶</button><button id="tBack">-5초</button><button id="tFwd">+5초</button><span id="tTime">0:00</span><a id="tOpen" target="_blank">유튜브에서 이 시점부터 ↗</a></div>
+  </div>
   <div class="sub" id="sub"></div>
   <div class="src" id="src"></div>
   <label><input type="checkbox" id="showSrc"> 영어 원문도 보기</label>
   <div class="status" id="status">링크를 넣으면 한국어 자막을 준비해요.</div>
+  <div class="list" id="script" hidden><h2>한국어 대본</h2><div id="lines"></div></div>
   <div class="list" id="list" hidden><h2>번역해 둔 영상</h2><div id="items"></div></div>
 </div>
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   let player, segs = [], videoId = null, pollTimer = null;
+  // 자막 모드(연령 제한 등 퍼가기 불가 영상): 영상 대신 페이지 자체 시계로 자막을 넘김
+  let textMode = false, clockBase = 0, clockAt = null, rendered = 0;
+  const now = () => textMode ? clockBase + (clockAt === null ? 0 : (performance.now() - clockAt) / 1000) : player?.getCurrentTime?.() ?? 0;
+  function setClock(t) { clockBase = Math.max(0, t); if (clockAt !== null) clockAt = performance.now(); }
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+  function enterTextMode() {
+    textMode = true;
+    clockBase = 0; clockAt = null; rendered = 0;
+    $('tPlay').textContent = '▶';
+    $('playerBox').hidden = true;
+    $('textMode').hidden = false;
+    $('script').hidden = false;
+  }
+  $('tPlay').onclick = () => {
+    if (clockAt === null) { clockAt = performance.now(); $('tPlay').textContent = '⏸'; }
+    else { clockBase = now(); clockAt = null; $('tPlay').textContent = '▶'; }
+  };
+  $('tBack').onclick = () => setClock(now() - 5);
+  $('tFwd').onclick = () => setClock(now() + 5);
 
   // youtu.be/ID, watch?v=ID, shorts/ID, 또는 ID 그대로
   function parseId(s) {
@@ -61,14 +94,21 @@
 
   function load(id) {
     videoId = id;
+    textMode = false;
     $('playerBox').hidden = false;
+    $('textMode').hidden = true;
+    $('script').hidden = true;
     segs = [];
     $('sub').textContent = '';
     $('src').textContent = '';
     history.replaceState(null, '', '?v=' + id + location.hash); // # 유지: 홈 화면 아이콘에도 비밀키가 남게
     const go = () => {
       if (player) player.loadVideoById(id);
-      else player = new YT.Player('yt', { videoId: id, playerVars: { playsinline: 1, cc_load_policy: 0 } });
+      else player = new YT.Player('yt', {
+        videoId: id,
+        playerVars: { playsinline: 1, cc_load_policy: 0 },
+        events: { onError: (e) => [100, 101, 150].includes(e.data) && enterTextMode() }, // 101·150 = 퍼가기 불가(연령 제한 등)
+      });
     };
     window.YT && YT.Player ? go() : (window.onYouTubeIframeAPIReady = go);
     start(id);
@@ -133,8 +173,13 @@
 
   // 재생 시간에 맞춰 자막 표시
   setInterval(() => {
-    if (!player || !player.getCurrentTime || !segs.length) return;
-    const t = player.getCurrentTime();
+    if (!segs.length || (!textMode && !player?.getCurrentTime)) return;
+    const t = now();
+    if (textMode) {
+      $('tTime').textContent = mmss(t);
+      $('tOpen').href = `https://www.youtube.com/watch?v=${videoId}&t=${Math.floor(t)}s`;
+      if (rendered !== segs.length) renderScript();
+    }
     let lo = 0, hi = segs.length - 1, i = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
@@ -145,7 +190,21 @@
     if ($('sub').textContent !== ko) $('sub').textContent = ko;
     const en = s && $('showSrc').checked ? s.src : '';
     if ($('src').textContent !== en) $('src').textContent = en;
+    if (textMode) document.querySelectorAll('.line').forEach((el, j) => el.classList.toggle('on', j === i && !!s));
   }, 200);
+
+  function renderScript() {
+    rendered = segs.length;
+    $('lines').replaceChildren(...segs.map((sg) => {
+      const d = document.createElement('div');
+      d.className = 'line';
+      const b = document.createElement('b');
+      b.textContent = mmss(sg.start);
+      d.append(b, sg.text || sg.src);
+      d.onclick = () => setClock(sg.start);
+      return d;
+    }));
+  }
 
   $('form').addEventListener('submit', (e) => {
     e.preventDefault();
