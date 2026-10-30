@@ -72,7 +72,7 @@
   const store = (k, v) => { try { if (v) localStorage.setItem(k, v); return localStorage.getItem(k) || ''; } catch { return v || ''; } };
   const KEY = store('ko-subs-key', hash.get('k'));
   const onPages = location.hostname.endsWith('github.io');
-  const STUDIO = (onPages ? store('ko-subs-studio', hash.get('s')) : location.origin).replace(/\/$/, '');
+  const STUDIO = store('ko-subs-studio', hash.get('s')).replace(/\/$/, '');
 
   async function fileId(id) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(KEY + ':' + id));
@@ -91,21 +91,25 @@
         }
       } catch {}
     }
-    // 2) 맥스튜디오에서 즉석 번역
-    if (!STUDIO) return setStatus('미리 번역된 영상이 아니에요 (맥스튜디오 주소가 없어요)', true);
+    // 2) 맥스튜디오에서 즉석 번역 — 공개 페이지에서 개인 네트워크로 요청하면 브라우저가 막으므로, 맥스튜디오 페이지로 이동
+    if (onPages) {
+      if (!STUDIO) return setStatus('미리 번역된 영상이 아니에요 (맥스튜디오 주소가 없어요)', true);
+      setStatus('미리 번역된 영상이 아니라 맥스튜디오로 이동해요… (꺼져 있으면 연결 오류가 나요)');
+      return location.replace(STUDIO + '/?v=' + id);
+    }
     setStatus('자막 받아오는 중… (처음 보는 영상은 10초쯤 걸려요)');
     try {
-      const d = await (await fetch(STUDIO + '/start?v=' + id)).json();
+      const d = await (await fetch('/start?v=' + id)).json();
       if (id !== videoId) return;
       apply(d);
     } catch {
-      setStatus('미리 번역된 영상이 아니고, 맥스튜디오에도 연결할 수 없어요', true);
+      setStatus('맥스튜디오 번역 서버에 연결할 수 없어요', true);
     }
   }
 
   async function poll(id) {
     try {
-      const d = await (await fetch(STUDIO + '/progress?videoId=' + id)).json();
+      const d = await (await fetch('/progress?videoId=' + id)).json();
       if (id === videoId) apply(d);
     } catch {
       pollTimer = setTimeout(() => poll(id), 3000);
