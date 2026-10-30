@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>번역자막</title>
 <style>
   :root { color-scheme: dark; }
@@ -32,7 +34,10 @@
   button { padding: 12px 16px; border: 0; border-radius: 8px; background: #d97757; color: #fff; font-size: 16px; font-weight: 600; }
   .list { margin: 20px 16px 0; }
   .list h2 { font-size: 15px; color: #aaa; font-weight: 600; margin: 0 0 8px; }
-  .list a { display: block; padding: 12px 0; border-top: 1px solid #222; color: inherit; text-decoration: none; }
+  .list a { display: flex; gap: 10px; align-items: flex-start; }
+  .list a img { width: 120px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex: none; background: #222; }
+  .list a span { font-size: 14px; line-height: 1.4; }
+  .list a { padding: 12px 0; border-top: 1px solid #222; color: inherit; text-decoration: none; }
   .list a small { display: block; color: #888; font-size: 13px; margin-top: 2px; }
   .note { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; background: #2a2116; color: #f0c48a; font-size: 14px; line-height: 1.5; }
   .ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 16px 0; }
@@ -240,10 +245,15 @@
       $('items').replaceChildren(...items.map((it) => {
         const a = document.createElement('a');
         a.href = '?v=' + it.id + location.hash;
-        a.textContent = it.title;
+        const img = document.createElement('img');
+        img.src = `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg`;
+        img.loading = 'lazy';
+        const t = document.createElement('span');
+        t.textContent = it.title;
         const sm = document.createElement('small');
         sm.textContent = `${it.channel} · ${it.added}`;
-        a.append(sm);
+        t.append(sm);
+        a.append(img, t);
         return a;
       }));
       $('list').hidden = !items.length;
