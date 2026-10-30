@@ -36,6 +36,10 @@
   .list h2 { font-size: 15px; color: #aaa; font-weight: 600; margin: 0 0 8px; }
   .list a { display: flex; gap: 10px; align-items: flex-start; }
   .list a img { width: 120px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex: none; background: #222; }
+  .thumb { position: relative; flex: none; }
+  .thumb i { position: absolute; left: 0; bottom: 0; height: 3px; background: #e33; border-radius: 0 0 0 6px; }
+  .thumb em { position: absolute; top: 4px; left: 4px; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.75); font-size: 11px; font-style: normal; }
+  .list a.seen { opacity: .55; }
   .list a span { font-size: 14px; line-height: 1.4; }
   .list a { padding: 12px 0; border-top: 1px solid #222; color: inherit; text-decoration: none; }
   .list a small { display: block; color: #888; font-size: 13px; margin-top: 2px; }
@@ -72,6 +76,15 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let player, segs = [], videoId = null, pollTimer = null;
+  // 시청 기록 (이 폰에만 저장): { 영상ID: { t: 본 위치(초), d: 길이(초) } }
+  const loadSeen = () => { try { return JSON.parse(localStorage.getItem('ko-subs-seen') || '{}'); } catch { return {}; } };
+  const seen = loadSeen();
+  const finished = (p) => p && p.d && p.t / p.d > 0.9;
+  function saveSeen(t, d) {
+    if (!videoId || !(t > 0)) return;
+    seen[videoId] = { t: Math.floor(t), d: Math.floor(d || seen[videoId]?.d || 0) };
+    try { localStorage.setItem('ko-subs-seen', JSON.stringify(seen)); } catch {}
+  }
   // 자막 모드(연령 제한 등 퍼가기 불가 영상): 영상 대신 페이지 자체 시계로 자막을 넘김
   let textMode = false, clockBase = 0, clockAt = null, rendered = 0;
   const now = () => textMode ? clockBase + (clockAt === null ? 0 : (performance.now() - clockAt) / 1000) : player?.getCurrentTime?.() ?? 0;
@@ -116,10 +129,11 @@
     $('src').textContent = '';
     history.replaceState(null, '', '?v=' + id + location.hash); // # 유지: 홈 화면 아이콘에도 비밀키가 남게
     const go = () => {
-      if (player) player.loadVideoById(id);
+      if (player) player.loadVideoById({ videoId: id, startSeconds: finished(seen[id]) ? 0 : seen[id]?.t || 0 });
       else player = new YT.Player('yt', {
         videoId: id,
-        playerVars: { playsinline: 1, cc_load_policy: 0, fs: 0 }, // 유튜브 전체화면 버튼 대신 우리 버튼 사용
+        // 보다 만 영상은 본 위치부터 (다 본 영상은 처음부터)
+        playerVars: { playsinline: 1, cc_load_policy: 0, fs: 0, start: finished(seen[id]) ? 0 : seen[id]?.t || 0 }, // 유튜브 전체화면 버튼 대신 우리 버튼 사용
         events: {
           onError: (e) => [100, 101, 150].includes(e.data) && enterTextMode(), // 101·150 = 퍼가기 불가(연령 제한 등)
           onStateChange: (e) => e.data === 1 && player.unloadModule?.('captions'), // 유튜브 영어 자막은 끔 (한국어와 겹침)
@@ -209,6 +223,12 @@
     if (textMode) document.querySelectorAll('.line').forEach((el, j) => el.classList.toggle('on', j === i && !!s));
   }, 200);
 
+  // 5초마다 본 위치 저장
+  setInterval(() => {
+    if (textMode) { if (clockAt !== null) saveSeen(now(), segs.at(-1) ? segs.at(-1).start + segs.at(-1).dur : 0); }
+    else if (player?.getPlayerState?.() === 1) saveSeen(player.getCurrentTime(), player.getDuration());
+  }, 5000);
+
   $('fs').onclick = () => {
     const big = $('playerBox').classList.toggle('big');
     $('fs').textContent = big ? '✕ 닫기' : '⛶ 전체화면';
@@ -245,15 +265,27 @@
       $('items').replaceChildren(...items.map((it) => {
         const a = document.createElement('a');
         a.href = '?v=' + it.id + location.hash;
+        const box = document.createElement('div');
+        box.className = 'thumb';
         const img = document.createElement('img');
         img.src = `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg`;
         img.loading = 'lazy';
+        box.append(img);
+        const p = seen[it.id];
+        if (p?.d) {
+          const bar = document.createElement('i'); // 빨간 막대 = 본 만큼
+          bar.style.width = Math.min(100, (p.t / p.d) * 100) + '%';
+          const tag = document.createElement('em');
+          tag.textContent = finished(p) ? '✓ 다 봄' : `${mmss(p.t)}까지 봄`;
+          box.append(bar, tag);
+          if (finished(p)) a.classList.add('seen');
+        }
         const t = document.createElement('span');
         t.textContent = it.title;
         const sm = document.createElement('small');
         sm.textContent = `${it.channel} · ${it.added}`;
         t.append(sm);
-        a.append(img, t);
+        a.append(box, t);
         return a;
       }));
       $('list').hidden = !items.length;
