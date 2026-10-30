@@ -12,6 +12,13 @@
   .player[hidden] { display: none; }
   .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
   .player iframe, #yt { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* 우리 전체화면: 아이폰 기본 전체화면은 자막을 덮으므로, 화면을 꽉 채우는 레이어를 직접 만든다 */
+  .player.big { position: fixed; inset: 0; z-index: 10; aspect-ratio: auto; width: 100vw; height: 100dvh; }
+  .ov { display: none; position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); max-width: 88%;
+    padding: 6px 14px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: clamp(18px, 3.6vmax, 30px);
+    line-height: 1.4; text-align: center; word-break: keep-all; pointer-events: none; z-index: 2; }
+  .player.big .ov:not(:empty) { display: block; }
+  .fsbtn { position: absolute; top: 8px; right: 8px; z-index: 3; padding: 6px 10px; font-size: 14px; background: rgba(0,0,0,.6); }
   .sub {
     min-height: 3.2em; margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px;
     background: #1f1f1f; font-size: 20px; line-height: 1.45; text-align: center; word-break: keep-all;
@@ -43,7 +50,7 @@
     <input id="link" type="url" placeholder="유튜브 링크 붙여넣기" autocomplete="off">
     <button>보기</button>
   </form>
-  <div class="player" id="playerBox" hidden><div id="yt"></div></div>
+  <div class="player" id="playerBox" hidden><div id="yt"></div><div class="ov" id="ov"></div><button class="fsbtn" id="fs">⛶ 전체화면</button></div>
   <div id="textMode" hidden>
     <div class="note">연령 제한 영상이라 여기서는 재생할 수 없어요. 유튜브 앱에서 재생하면서 ▶를 눌러 자막 시간을 맞추세요. 대본 줄을 누르면 그 시점으로 맞춰져요.</div>
     <div class="ctrl"><button id="tPlay">▶</button><button id="tBack">-5초</button><button id="tFwd">+5초</button><span id="tTime">0:00</span><a id="tOpen" target="_blank">유튜브에서 이 시점부터 ↗</a></div>
@@ -106,7 +113,7 @@
       if (player) player.loadVideoById(id);
       else player = new YT.Player('yt', {
         videoId: id,
-        playerVars: { playsinline: 1, cc_load_policy: 0 },
+        playerVars: { playsinline: 1, cc_load_policy: 0, fs: 0 }, // 유튜브 전체화면 버튼 대신 우리 버튼 사용
         events: { onError: (e) => [100, 101, 150].includes(e.data) && enterTextMode() }, // 101·150 = 퍼가기 불가(연령 제한 등)
       });
     };
@@ -187,11 +194,17 @@
     }
     const s = i >= 0 && t <= segs[i].start + segs[i].dur + 0.3 ? segs[i] : null;
     const ko = s ? s.text || '' : '';
-    if ($('sub').textContent !== ko) $('sub').textContent = ko;
+    if ($('sub').textContent !== ko) $('sub').textContent = $('ov').textContent = ko;
     const en = s && $('showSrc').checked ? s.src : '';
     if ($('src').textContent !== en) $('src').textContent = en;
     if (textMode) document.querySelectorAll('.line').forEach((el, j) => el.classList.toggle('on', j === i && !!s));
   }, 200);
+
+  $('fs').onclick = () => {
+    const big = $('playerBox').classList.toggle('big');
+    $('fs').textContent = big ? '✕ 닫기' : '⛶ 전체화면';
+    document.body.style.overflow = big ? 'hidden' : '';
+  };
 
   function renderScript() {
     rendered = segs.length;
