@@ -14,7 +14,7 @@
   .player iframe, #yt { position: absolute; inset: 0; width: 100%; height: 100%; }
   /* 우리 전체화면: 아이폰 기본 전체화면은 자막을 덮으므로, 화면을 꽉 채우는 레이어를 직접 만든다 */
   .player.big { position: fixed; inset: 0; z-index: 10; aspect-ratio: auto; width: 100vw; height: 100dvh; }
-  .ov { display: none; position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); max-width: 88%;
+  .ov { display: none; position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%); max-width: 88%;
     padding: 6px 14px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: clamp(18px, 3.6vmax, 30px);
     line-height: 1.4; text-align: center; word-break: keep-all; pointer-events: none; z-index: 2; }
   .player.big .ov:not(:empty) { display: block; }
@@ -114,7 +114,10 @@
       else player = new YT.Player('yt', {
         videoId: id,
         playerVars: { playsinline: 1, cc_load_policy: 0, fs: 0 }, // 유튜브 전체화면 버튼 대신 우리 버튼 사용
-        events: { onError: (e) => [100, 101, 150].includes(e.data) && enterTextMode() }, // 101·150 = 퍼가기 불가(연령 제한 등)
+        events: {
+          onError: (e) => [100, 101, 150].includes(e.data) && enterTextMode(), // 101·150 = 퍼가기 불가(연령 제한 등)
+          onStateChange: (e) => e.data === 1 && player.unloadModule?.('captions'), // 유튜브 영어 자막은 끔 (한국어와 겹침)
+        },
       });
     };
     window.YT && YT.Player ? go() : (window.onYouTubeIframeAPIReady = go);
